@@ -27,9 +27,10 @@ def format_entry(item: dict) -> str:
     sess_map = {"pending": "не проведён", "done": "проведён"}
     pay = pay_map.get(item.get("payment_status"), item.get("payment_status"))
     sess = sess_map.get(item.get("session_status"), item.get("session_status"))
+    contact = item.get("user_username") or item.get("user_fullname") or f"id:{item.get('user_id')}"
     return (
         f"#{item.get('position')} — {item.get('name')} / ДР: {item.get('birth_date')} / услуга: {item.get('service_id')}\n"
-        f"Оплата: {pay} | Сеанс: {sess} | Чек: {'да' if item.get('payment_proof') else 'нет'}"
+        f"Оплата: {pay} | Сеанс: {sess} | Чек: {'да' if item.get('payment_proof') else 'нет'} | Контакт: @{contact}"
     )
 
 
@@ -113,10 +114,20 @@ def build_list_view(filter_key: str, page: int) -> tuple[str, InlineKeyboardMark
         lines.append("Записей нет.")
     else:
         for item in chunk:
-            lines.append(format_entry(item))
+            if filter_key == "arch":
+                lines.append(
+                    f"#{item.get('archive_id')} (orig #{item.get('position')}) — {item.get('name')} / ДР: {item.get('birth_date')} / услуга: {item.get('service_id')}\n"
+                    f"Оплата: {item.get('payment_status')} | Сеанс: {item.get('session_status')} | Чек: {'да' if item.get('payment_proof') else 'нет'}"
+                )
+            else:
+                lines.append(format_entry(item))
     kb_rows = []
     for item in chunk:
-        kb_rows.append([InlineKeyboardButton(text=f"#{item.get('position')} ▶️", callback_data=f"adm:item:{filter_key}:{item.get('position')}")])
+        if filter_key == "arch":
+            arch_id = item.get("archive_id")
+            kb_rows.append([InlineKeyboardButton(text=f"#{arch_id} ▶️", callback_data=f"adm:architem:{arch_id}")])
+        else:
+            kb_rows.append([InlineKeyboardButton(text=f"#{item.get('position')} ▶️", callback_data=f"adm:item:{filter_key}:{item.get('position')}")])
     # Навигация
     nav = []
     if start > 0:
@@ -334,6 +345,7 @@ async def cb_admin_item(callback: CallbackQuery) -> None:
     if not item:
         await callback.answer("Не найдено", show_alert=True)
         return
+    contact = item.get("user_username") or item.get("user_fullname") or f"id:{item.get('user_id')}"
     lines = [
         f"Заявка #{item.get('position')}",
         f"Имя: {item.get('name')}",
@@ -343,6 +355,7 @@ async def cb_admin_item(callback: CallbackQuery) -> None:
         f"Сеанс: {item.get('session_status')}",
         f"Чек: {'да' if item.get('payment_proof') else 'нет'}",
         f"Создано: {item.get('created_at')}",
+        f"Контакт: @{contact}",
     ]
     kb = build_item_actions(item, is_super_admin(callback.from_user.id), bool(item.get("payment_proof")), filter_key)
     await callback.message.edit_text("\n".join(lines), reply_markup=kb, parse_mode=None)
@@ -411,4 +424,33 @@ async def cb_admin_proof(callback: CallbackQuery) -> None:
         await callback.message.answer_photo(photo=file_id, caption=f"Чек по заявке #{pos}")
     else:
         await callback.message.answer_document(document=file_id, caption=f"Чек по заявке #{pos}")
+    await callback.answer()
+
+
+@admin_router.callback_query(F.data.startswith("adm:architem:"))
+async def cb_admin_architem(callback: CallbackQuery) -> None:
+    if not is_moderator(callback.from_user.id):
+        await callback.answer("Нет доступа", show_alert=True)
+        return
+    _, _, arch_id_str = callback.data.split(":", 2)
+    arch_id = int(arch_id_str)
+    item = storage.get_history_by_id(arch_id)
+    if not item:
+        await callback.answer("Не найдено", show_alert=True)
+        return
+    contact = item.get("user_username") or item.get("user_fullname") or f"id:{item.get('user_id')}"
+    lines = [
+        f"Архив #{item.get('archive_id')}",
+        f"Имя: {item.get('name')}",
+        f"ДР: {item.get('birth_date')}",
+        f"Услуга: {item.get('service_id')}",
+        f"Оплата: {item.get('payment_status')}",
+        f"Сеанс: {item.get('session_status')}",
+        f"Чек: {'да' if item.get('payment_proof') else 'нет'}",
+        f"Создано: {item.get('created_at')}",
+        f"Архивировано: {item.get('archived_at')}",
+        f"Контакт: @{contact}",
+    ]
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⬅️ К списку", callback_data="adm:list:arch:1")]])
+    await callback.message.edit_text("\n".join(lines), reply_markup=kb, parse_mode=None)
     await callback.answer()

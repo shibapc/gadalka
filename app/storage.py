@@ -38,6 +38,12 @@ class QueueStorage:
             elif isinstance(proof, str):
                 item["payment_proof"] = {"type": "unknown", "file_id": proof}
                 dirty = True
+            if "user_username" not in item:
+                item["user_username"] = None
+                dirty = True
+            if "user_fullname" not in item:
+                item["user_fullname"] = None
+                dirty = True
         if dirty:
             self._write(data)
         return data
@@ -49,15 +55,38 @@ class QueueStorage:
     def _read_history(self) -> List[Dict]:
         try:
             with open(self.history_path, "r", encoding="utf-8") as f:
-                return json.load(f)
+                data = json.load(f)
         except (FileNotFoundError, json.JSONDecodeError):
-            return []
+            data = []
+        dirty = False
+        for idx, item in enumerate(data, start=1):
+            if "archive_id" not in item:
+                item["archive_id"] = idx
+                dirty = True
+            if "user_username" not in item:
+                item["user_username"] = None
+                dirty = True
+            if "user_fullname" not in item:
+                item["user_fullname"] = None
+                dirty = True
+        if dirty:
+            self._write_history(data)
+        return data
 
     def _write_history(self, data: List[Dict]) -> None:
         with open(self.history_path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
-    def add_request(self, user_id: int, service_id: str, birth_date: str, name: str, problem: str) -> int:
+    def add_request(
+        self,
+        user_id: int,
+        service_id: str,
+        birth_date: str,
+        name: str,
+        problem: str,
+        user_username: Optional[str],
+        user_fullname: Optional[str],
+    ) -> int:
         data = self._read()
         position = len(data) + 1
         data.append(
@@ -68,6 +97,8 @@ class QueueStorage:
                 "name": name,
                 "problem": problem,
                 "position": position,
+                "user_username": user_username,
+                "user_fullname": user_fullname,
                 "payment_status": "pending",
                 "session_status": "pending",
                 "payment_proof": None,
@@ -144,6 +175,7 @@ class QueueStorage:
             return False
         history = self._read_history()
         target["archived_at"] = now_ekb().isoformat()
+        target["archive_id"] = len(history) + 1
         history.append(target)
         self._write_history(history)
         for idx, item in enumerate(rest, start=1):
@@ -154,6 +186,12 @@ class QueueStorage:
     def list_history(self, limit: int = 20) -> List[Dict]:
         history = self._read_history()
         return history[-limit:][::-1]
+
+    def get_history_by_id(self, archive_id: int) -> Optional[Dict]:
+        for item in self._read_history():
+            if item.get("archive_id") == archive_id:
+                return item
+        return None
 
 
 storage = QueueStorage(Path("data/queue.json"), Path("data/history.json"))

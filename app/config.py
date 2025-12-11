@@ -14,7 +14,7 @@ class Settings:
     MASTER_NAME: str = "Ксения Малиновская"
     PLACE_TITLE: str = "гадание"
     SERVICES: tuple = (
-        {"id": "consult", "title": "Консультация", "price": 5000},
+        {"id": "consult", "title": "Консультация", "price": 15000},
     )
     ADMIN_IDS: Tuple[int, ...] = ()
     MODERATOR_IDS: Tuple[int, ...] = ()

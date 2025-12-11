@@ -101,12 +101,15 @@ async def handle_confirm_payment(callback: CallbackQuery) -> None:
         await callback.answer("Не хватает данных для записи. Начните заново через /start.", show_alert=True)
         reset_session(callback.from_user.id)
         return
+    full_name = " ".join(filter(None, [callback.from_user.first_name, callback.from_user.last_name]))
     position = storage.add_request(
         user_id=callback.from_user.id,
         service_id=session.service_id,
         birth_date=session.birth_date,
         name=session.name,
         problem=session.problem,
+        user_username=callback.from_user.username,
+        user_fullname=full_name or None,
     )
     session.last_position = position
     session.step = "payment_proof"
