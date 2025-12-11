@@ -2,6 +2,8 @@ from app.config import settings
 from app.models import BookingSession
 from app.services.booking import get_service_by_id
 
+PREPAY_AMOUNT = 2500
+
 
 def build_start_text() -> str:
     return (
@@ -37,9 +39,12 @@ def ask_phone_text() -> str:
     return "Поделитесь номером телефона, чтобы мы могли связаться. Нажмите кнопку ниже."
 
 
-def payment_prompt_text(price: int) -> str:
+def payment_prompt_text(total_price: int) -> str:
+    rest = max(total_price - PREPAY_AMOUNT, 0)
+    rest_text = f"Остаток {rest}₽ будет оплачен отдельно." if rest else ""
     return (
-        f"Для подтверждения записи нужна предоплата {price}₽.\n"
+        f"Для подтверждения записи нужна предоплата {PREPAY_AMOUNT}₽.\n"
+        f"{rest_text}\n"
         "Реквизиты (пример):\n"
         "СБП: 4100 0000 0000 0000\n"
         "Комментарий к платежу: Ваше имя + дата рождения\n"
