@@ -44,6 +44,20 @@ class QueueStorage:
             if "user_fullname" not in item:
                 item["user_fullname"] = None
                 dirty = True
+            if "is_urgent" not in item:
+                item["is_urgent"] = False
+                dirty = True
+            if "price" not in item:
+                item["price"] = None
+                dirty = True
+            if "phone" not in item:
+                item["phone"] = None
+                dirty = True
+        # срочные вверх, сортируем по дате создания
+        data.sort(key=lambda x: (not x.get("is_urgent", False), x.get("created_at", "")))
+        for idx, item in enumerate(data, start=1):
+            item["position"] = idx
+        dirty = True  # всегда сохраняем после нормализации
         if dirty:
             self._write(data)
         return data
@@ -69,6 +83,15 @@ class QueueStorage:
             if "user_fullname" not in item:
                 item["user_fullname"] = None
                 dirty = True
+            if "is_urgent" not in item:
+                item["is_urgent"] = False
+                dirty = True
+            if "price" not in item:
+                item["price"] = None
+                dirty = True
+            if "phone" not in item:
+                item["phone"] = None
+                dirty = True
         if dirty:
             self._write_history(data)
         return data
@@ -86,27 +109,36 @@ class QueueStorage:
         problem: str,
         user_username: Optional[str],
         user_fullname: Optional[str],
+        is_urgent: bool,
+        price: Optional[int],
+        phone: Optional[str],
     ) -> int:
         data = self._read()
-        position = len(data) + 1
-        data.append(
-            {
-                "user_id": user_id,
-                "service_id": service_id,
-                "birth_date": birth_date,
-                "name": name,
-                "problem": problem,
-                "position": position,
-                "user_username": user_username,
-                "user_fullname": user_fullname,
-                "payment_status": "pending",
-                "session_status": "pending",
-                "payment_proof": None,
-                "created_at": now_ekb().isoformat(),
-            }
-        )
+        new_item = {
+            "user_id": user_id,
+            "service_id": service_id,
+            "birth_date": birth_date,
+            "name": name,
+            "problem": problem,
+            "user_username": user_username,
+            "user_fullname": user_fullname,
+            "is_urgent": is_urgent,
+            "price": price,
+            "phone": phone,
+            "payment_status": "pending",
+            "session_status": "pending",
+            "payment_proof": None,
+            "created_at": now_ekb().isoformat(),
+        }
+        data.append(new_item)
+        data.sort(key=lambda x: (not x.get("is_urgent", False), x.get("created_at", "")))
+        for idx, item in enumerate(data, start=1):
+            item["position"] = idx
         self._write(data)
-        return position
+        for item in data:
+            if item is new_item:
+                return item["position"]
+        return len(data)
 
     def list_user_requests(self, user_id: int) -> List[str]:
         entries = self._read()

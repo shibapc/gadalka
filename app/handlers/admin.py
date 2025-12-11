@@ -3,6 +3,7 @@ from typing import List, Dict
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.exceptions import TelegramBadRequest
 
 from app.config import settings
 from app.keyboards.main import main_menu_keyboard
@@ -27,10 +28,16 @@ def format_entry(item: dict) -> str:
     sess_map = {"pending": "не проведён", "done": "проведён"}
     pay = pay_map.get(item.get("payment_status"), item.get("payment_status"))
     sess = sess_map.get(item.get("session_status"), item.get("session_status"))
-    contact = item.get("user_username") or item.get("user_fullname") or f"id:{item.get('user_id')}"
+    username = item.get("user_username")
+    contact = username or item.get("user_fullname") or f"id:{item.get('user_id')}"
+    price = item.get("price")
+    price_text = f"{price}₽" if price else ""
+    urgent = "срочно" if item.get("is_urgent") else "обычно"
+    contact_text = f"@{contact}" if username else contact
+    phone = item.get("phone") or "—"
     return (
-        f"#{item.get('position')} — {item.get('name')} / ДР: {item.get('birth_date')} / услуга: {item.get('service_id')}\n"
-        f"Оплата: {pay} | Сеанс: {sess} | Чек: {'да' if item.get('payment_proof') else 'нет'} | Контакт: @{contact}"
+        f"#{item.get('position')} — {item.get('name')} / ДР: {item.get('birth_date')} / услуга: {item.get('service_id')} ({urgent} {price_text})\n"
+        f"Оплата: {pay} | Сеанс: {sess} | Чек: {'да' if item.get('payment_proof') else 'нет'} | Контакт: {contact_text} | Телефон: {phone}"
     )
 
 
@@ -115,9 +122,13 @@ def build_list_view(filter_key: str, page: int) -> tuple[str, InlineKeyboardMark
     else:
         for item in chunk:
             if filter_key == "arch":
+                pay_map = {"pending": "неоплачено", "awaiting_review": "ожидает проверки", "paid": "оплачено"}
+                sess_map = {"pending": "не проведён", "done": "проведён"}
+                pay = pay_map.get(item.get("payment_status"), item.get("payment_status"))
+                sess = sess_map.get(item.get("session_status"), item.get("session_status"))
                 lines.append(
                     f"#{item.get('archive_id')} (orig #{item.get('position')}) — {item.get('name')} / ДР: {item.get('birth_date')} / услуга: {item.get('service_id')}\n"
-                    f"Оплата: {item.get('payment_status')} | Сеанс: {item.get('session_status')} | Чек: {'да' if item.get('payment_proof') else 'нет'}"
+                    f"Оплата: {pay} | Сеанс: {sess} | Чек: {'да' if item.get('payment_proof') else 'нет'}"
                 )
             else:
                 lines.append(format_entry(item))
@@ -330,7 +341,10 @@ async def cb_admin_list(callback: CallbackQuery) -> None:
     _, _, filter_key, page_str = callback.data.split(":", 3)
     page = int(page_str)
     text, kb = build_list_view(filter_key, page)
-    await callback.message.edit_text(text, reply_markup=kb, parse_mode=None)
+    try:
+        await callback.message.edit_text(text, reply_markup=kb, parse_mode=None)
+    except TelegramBadRequest:
+        await callback.message.answer(text, reply_markup=kb, parse_mode=None)
     await callback.answer()
 
 
@@ -345,17 +359,29 @@ async def cb_admin_item(callback: CallbackQuery) -> None:
     if not item:
         await callback.answer("Не найдено", show_alert=True)
         return
-    contact = item.get("user_username") or item.get("user_fullname") or f"id:{item.get('user_id')}"
+    username = item.get("user_username")
+    contact_base = username or item.get("user_fullname") or f"id:{item.get('user_id')}"
+    contact_text = f"@{contact_base}" if username else contact_base
+    phone = item.get("phone") or "—"
+    phone = item.get("phone") or "—"
+    pay_map = {"pending": "неоплачено", "awaiting_review": "ожидает проверки", "paid": "оплачено"}
+    sess_map = {"pending": "не проведён", "done": "проведён"}
+    pay = pay_map.get(item.get("payment_status"), item.get("payment_status"))
+    sess = sess_map.get(item.get("session_status"), item.get("session_status"))
+    price = item.get("price")
+    price_text = f"{price}₽" if price else ""
+    urgent = "срочно" if item.get("is_urgent") else "обычно"
     lines = [
         f"Заявка #{item.get('position')}",
         f"Имя: {item.get('name')}",
         f"ДР: {item.get('birth_date')}",
-        f"Услуга: {item.get('service_id')}",
-        f"Оплата: {item.get('payment_status')}",
-        f"Сеанс: {item.get('session_status')}",
+        f"Услуга: {item.get('service_id')} ({urgent} {price_text})",
+        f"Оплата: {pay}",
+        f"Сеанс: {sess}",
         f"Чек: {'да' if item.get('payment_proof') else 'нет'}",
         f"Создано: {item.get('created_at')}",
-        f"Контакт: @{contact}",
+        f"Контакт: {contact_text}",
+        f"Телефон: {phone}",
     ]
     kb = build_item_actions(item, is_super_admin(callback.from_user.id), bool(item.get("payment_proof")), filter_key)
     await callback.message.edit_text("\n".join(lines), reply_markup=kb, parse_mode=None)
@@ -438,18 +464,28 @@ async def cb_admin_architem(callback: CallbackQuery) -> None:
     if not item:
         await callback.answer("Не найдено", show_alert=True)
         return
-    contact = item.get("user_username") or item.get("user_fullname") or f"id:{item.get('user_id')}"
+    username = item.get("user_username")
+    contact_base = username or item.get("user_fullname") or f"id:{item.get('user_id')}"
+    contact_text = f"@{contact_base}" if username else contact_base
+    pay_map = {"pending": "неоплачено", "awaiting_review": "ожидает проверки", "paid": "оплачено"}
+    sess_map = {"pending": "не проведён", "done": "проведён"}
+    pay = pay_map.get(item.get("payment_status"), item.get("payment_status"))
+    sess = sess_map.get(item.get("session_status"), item.get("session_status"))
+    price = item.get("price")
+    price_text = f"{price}₽" if price else ""
+    urgent = "срочно" if item.get("is_urgent") else "обычно"
     lines = [
         f"Архив #{item.get('archive_id')}",
         f"Имя: {item.get('name')}",
         f"ДР: {item.get('birth_date')}",
-        f"Услуга: {item.get('service_id')}",
-        f"Оплата: {item.get('payment_status')}",
-        f"Сеанс: {item.get('session_status')}",
+        f"Услуга: {item.get('service_id')} ({urgent} {price_text})",
+        f"Оплата: {pay}",
+        f"Сеанс: {sess}",
         f"Чек: {'да' if item.get('payment_proof') else 'нет'}",
         f"Создано: {item.get('created_at')}",
         f"Архивировано: {item.get('archived_at')}",
-        f"Контакт: @{contact}",
+        f"Контакт: {contact_text}",
+        f"Телефон: {phone}",
     ]
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⬅️ К списку", callback_data="adm:list:arch:1")]])
     await callback.message.edit_text("\n".join(lines), reply_markup=kb, parse_mode=None)

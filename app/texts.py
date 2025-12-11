@@ -18,7 +18,7 @@ def booking_prompt_text() -> str:
 
 def service_selected_text(service_id: str) -> str:
     service = get_service_by_id(service_id) or {"title": service_id, "price": "—"}
-    return f"Вы выбрали: *{service['title']}* ({service.get('price', '—')}₽). Теперь ответьте на вопросы:"
+    return f"Вы выбрали: *{service['title']}* ({service.get('price', '—')}₽)."
 
 
 def ask_birth_date_text() -> str:
@@ -33,9 +33,13 @@ def ask_problem_text() -> str:
     return "Опишите вашу проблему максимально подробно."
 
 
-def payment_prompt_text() -> str:
+def ask_phone_text() -> str:
+    return "Поделитесь номером телефона, чтобы мы могли связаться. Нажмите кнопку ниже."
+
+
+def payment_prompt_text(price: int) -> str:
     return (
-        "Для подтверждения записи нужна предоплата 1500₽.\n"
+        f"Для подтверждения записи нужна предоплата {price}₽.\n"
         "Реквизиты (пример):\n"
         "СБП: 4100 0000 0000 0000\n"
         "Комментарий к платежу: Ваше имя + дата рождения\n"
@@ -53,9 +57,13 @@ def payment_proof_received_text() -> str:
 
 def queue_confirmation_text(session: BookingSession) -> str:
     service = get_service_by_id(session.service_id) or {"title": session.service_id, "price": "—"}
+    price_text = f"{session.price}₽" if session.price else f"{service.get('price', '—')}₽"
+    urgency = "Срочно (в начале очереди)" if session.is_urgent else "Обычная"
     return (
         "Заявка принята ✅\n\n"
         f"*Услуга:* {service['title']}\n"
+        f"*Тип:* {urgency}\n"
+        f"*Стоимость:* {price_text}\n"
         f"*Дата рождения:* {session.birth_date}\n"
         f"*Имя:* {session.name}\n"
         "*Описание:*\n"

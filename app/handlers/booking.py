@@ -3,8 +3,10 @@ from typing import Dict
 from aiogram import F, Router
 from aiogram.types import CallbackQuery, Message
 
+from app.keyboards.contact import contact_keyboard
 from app.keyboards.main import main_menu_keyboard
 from app.keyboards.payment import payment_confirm_keyboard
+from app.keyboards.priority import priority_keyboard
 from app.keyboards.services import services_keyboard
 from app.logger import get_logger
 from app.models import BookingSession
@@ -16,6 +18,7 @@ from app.texts import (
     ask_problem_text,
     booking_prompt_text,
     ask_payment_proof_text,
+    ask_phone_text,
     payment_proof_received_text,
     queue_confirmation_text,
     payment_prompt_text,
@@ -50,10 +53,31 @@ async def handle_service(callback: CallbackQuery) -> None:
     service_id = callback.data.split(":", 1)[1]
     session = get_session(callback.from_user.id)
     session.service_id = service_id
-    session.step = "birth_date"
+    session.step = "priority"
     await callback.message.edit_text(service_selected_text(service_id))
-    await callback.message.answer(ask_birth_date_text())
+    service = get_service_by_id(service_id)
+    base_price = service.get("price", 0) if service else 0
+    await callback.message.answer(
+        "Выберите тип записи:\n- Обычная — в общей очереди\n- Срочно — двойная стоимость, в начало очереди",
+        reply_markup=priority_keyboard(base_price),
+    )
     await callback.answer("Услуга выбрана")
+
+
+@booking_router.callback_query(F.data.startswith("priority:"))
+async def handle_priority(callback: CallbackQuery) -> None:
+    choice = callback.data.split(":", 1)[1]
+    session = get_session(callback.from_user.id)
+    if choice not in ("normal", "urgent"):
+        await callback.answer()
+        return
+    service = get_service_by_id(session.service_id)
+    base_price = service.get("price", 0) if service else 0
+    session.is_urgent = choice == "urgent"
+    session.price = base_price * (2 if session.is_urgent else 1)
+    session.step = "birth_date"
+    await callback.message.answer(ask_birth_date_text())
+    await callback.answer("Тип выбран")
 
 
 @booking_router.message(F.text)
@@ -82,8 +106,8 @@ async def handle_steps(message: Message) -> None:
 
     if session.step == "problem":
         session.problem = text
-        session.step = "payment_confirm"
-        await message.answer(payment_prompt_text(), reply_markup=payment_confirm_keyboard())
+        session.step = "phone"
+        await message.answer(ask_phone_text(), reply_markup=contact_keyboard())
         return
 
     if session.step == "payment_proof":
@@ -94,12 +118,18 @@ async def handle_steps(message: Message) -> None:
 @booking_router.callback_query(F.data == "confirm_payment")
 async def handle_confirm_payment(callback: CallbackQuery) -> None:
     session = get_session(callback.from_user.id)
-    if session.step != "payment_confirm":
+    if session.step not in ("payment_confirm", "phone"):
         await callback.answer("Начните запись через /start", show_alert=True)
         return
     if not (session.service_id and session.birth_date and session.name and session.problem):
         await callback.answer("Не хватает данных для записи. Начните заново через /start.", show_alert=True)
         reset_session(callback.from_user.id)
+        return
+    if session.step == "phone":
+        await callback.answer("Сначала поделитесь телефоном", show_alert=True)
+        return
+    if not session.phone:
+        await callback.answer("Сначала поделитесь телефоном", show_alert=True)
         return
     full_name = " ".join(filter(None, [callback.from_user.first_name, callback.from_user.last_name]))
     position = storage.add_request(
@@ -110,6 +140,9 @@ async def handle_confirm_payment(callback: CallbackQuery) -> None:
         problem=session.problem,
         user_username=callback.from_user.username,
         user_fullname=full_name or None,
+        is_urgent=session.is_urgent,
+        price=session.price,
+        phone=session.phone,
     )
     session.last_position = position
     session.step = "payment_proof"
