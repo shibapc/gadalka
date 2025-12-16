@@ -9,11 +9,8 @@ def services_keyboard(selected_service_id: str | None) -> InlineKeyboardMarkup:
         prefix = "✅ " if selected_service_id == service["id"] else ""
         rows.append(
             [
-                InlineKeyboardButton(
-                    text=f"{prefix}{service['title']} — {service['price']}₽",
-                    callback_data=f"service:{service['id']}",
-                )
+                InlineKeyboardButton(text=f"{prefix}{service['title']}", callback_data=f"service:{service['id']}"),
+                InlineKeyboardButton(text="⬅️ На главную", callback_data="back:home"),
             ]
         )
-    rows.append([InlineKeyboardButton(text="⬅️ На главную", callback_data="back:home")])
     return InlineKeyboardMarkup(inline_keyboard=rows)

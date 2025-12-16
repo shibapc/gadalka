@@ -13,15 +13,13 @@ from app.models import BookingSession
 from app.services.booking import get_service_by_id, now_ekb, validate_birth_date
 from app.storage import storage
 from app.texts import (
+    PREPAY_AMOUNT,
     ask_birth_date_text,
     ask_name_text,
     ask_problem_text,
     booking_prompt_text,
-    ask_payment_proof_text,
     ask_phone_text,
-    payment_proof_received_text,
     queue_confirmation_text,
-    payment_prompt_text,
     service_selected_text,
 )
 
@@ -55,11 +53,9 @@ async def handle_service(callback: CallbackQuery) -> None:
     session.service_id = service_id
     session.step = "priority"
     await callback.message.edit_text(service_selected_text(service_id))
-    service = get_service_by_id(service_id)
-    base_price = service.get("price", 0) if service else 0
     await callback.message.answer(
-        "Выберите тип записи:\n- Обычная — в общей очереди\n- Срочно — двойная стоимость, в начало очереди",
-        reply_markup=priority_keyboard(base_price),
+        "Выберите тип записи:\n- Обычная — в общей очереди\n- Срочная — в начало очереди (без доплаты)\n",
+        reply_markup=priority_keyboard(),
     )
     await callback.answer("Услуга выбрана")
 
@@ -71,10 +67,8 @@ async def handle_priority(callback: CallbackQuery) -> None:
     if choice not in ("normal", "urgent"):
         await callback.answer()
         return
-    service = get_service_by_id(session.service_id)
-    base_price = service.get("price", 0) if service else 0
     session.is_urgent = choice == "urgent"
-    session.price = base_price * (2 if session.is_urgent else 1)
+    session.price = PREPAY_AMOUNT  # фиксированная предоплата
     session.step = "birth_date"
     await callback.message.answer(ask_birth_date_text())
     await callback.answer("Тип выбран")
@@ -110,51 +104,42 @@ async def handle_steps(message: Message) -> None:
         await message.answer(ask_phone_text(), reply_markup=contact_keyboard())
         return
 
-    if session.step == "payment_proof":
-        await message.answer(ask_payment_proof_text())
-        return
+    # waiting for payment now handled in payment handler
+    return
 
 
-@booking_router.callback_query(F.data == "confirm_payment")
-async def handle_confirm_payment(callback: CallbackQuery) -> None:
-    session = get_session(callback.from_user.id)
-    if session.step not in ("payment_confirm", "phone"):
-        await callback.answer("Начните запись через /start", show_alert=True)
+@booking_router.message(F.successful_payment)
+async def handle_successful_payment(message: Message) -> None:
+    session = get_session(message.from_user.id)
+    if session.step != "waiting_payment":
+        await message.answer("Не удалось связать оплату с заявкой. Начните заново через /start.")
         return
     if not (session.service_id and session.birth_date and session.name and session.problem):
-        await callback.answer("Не хватает данных для записи. Начните заново через /start.", show_alert=True)
-        reset_session(callback.from_user.id)
+        await message.answer("Не хватает данных для записи. Начните заново через /start.")
+        reset_session(message.from_user.id)
         return
-    if session.step == "phone":
-        await callback.answer("Сначала поделитесь телефоном", show_alert=True)
-        return
-    if not session.phone:
-        await callback.answer("Сначала поделитесь телефоном", show_alert=True)
-        return
-    full_name = " ".join(filter(None, [callback.from_user.first_name, callback.from_user.last_name]))
+    full_name = " ".join(filter(None, [message.from_user.first_name, message.from_user.last_name]))
     position = storage.add_request(
-        user_id=callback.from_user.id,
+        user_id=message.from_user.id,
         service_id=session.service_id,
         birth_date=session.birth_date,
         name=session.name,
         problem=session.problem,
-        user_username=callback.from_user.username,
+        user_username=message.from_user.username,
         user_fullname=full_name or None,
         is_urgent=session.is_urgent,
-        price=session.price,
+        price=PREPAY_AMOUNT,
         phone=session.phone,
+        payment_status="paid",
     )
-    session.last_position = position
-    session.step = "payment_proof"
     log.info(
-        "Queue added user=%s service=%s position=%s",
-        callback.from_user.id,
+        "Queue added (paid) user=%s service=%s position=%s",
+        message.from_user.id,
         session.service_id,
         position,
     )
-    await callback.message.edit_text(queue_confirmation_text(session))
-    await callback.message.answer(ask_payment_proof_text())
-    await callback.answer("Заявка создана")
+    await message.answer(queue_confirmation_text(session), reply_markup=main_menu_keyboard())
+    reset_session(message.from_user.id)
 
 
 @booking_router.callback_query(F.data == "back:home")

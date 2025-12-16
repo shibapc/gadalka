@@ -11,10 +11,11 @@ load_dotenv()
 @dataclass(frozen=True)
 class Settings:
     BOT_TOKEN: str
+    PAYMENT_PROVIDER_TOKEN: str = ""
     MASTER_NAME: str = "Ксения Малиновская"
     PLACE_TITLE: str = "гадание"
     SERVICES: tuple = (
-        {"id": "consult", "title": "Консультация", "price": 15000},
+        {"id": "consult", "title": "Сеанс гадания", "price": 0},
     )
     ADMIN_IDS: Tuple[int, ...] = ()
     MODERATOR_IDS: Tuple[int, ...] = ()
@@ -26,7 +27,8 @@ def load_settings() -> Settings:
         raise RuntimeError("BOT_TOKEN is missing. Создайте .env на основе .env.example и задайте токен.")
     admins = tuple(int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip().isdigit())
     moderators = tuple(int(x) for x in os.getenv("MODERATOR_IDS", "").split(",") if x.strip().isdigit())
-    return Settings(BOT_TOKEN=token, ADMIN_IDS=admins, MODERATOR_IDS=moderators)
+    provider = os.getenv("PAYMENT_PROVIDER_TOKEN", "")
+    return Settings(BOT_TOKEN=token, ADMIN_IDS=admins, MODERATOR_IDS=moderators, PAYMENT_PROVIDER_TOKEN=provider)
 
 
 settings = load_settings()

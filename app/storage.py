@@ -112,6 +112,7 @@ class QueueStorage:
         is_urgent: bool,
         price: Optional[int],
         phone: Optional[str],
+        payment_status: str = "pending",
     ) -> int:
         data = self._read()
         new_item = {
@@ -125,7 +126,7 @@ class QueueStorage:
             "is_urgent": is_urgent,
             "price": price,
             "phone": phone,
-            "payment_status": "pending",
+            "payment_status": payment_status,
             "session_status": "pending",
             "payment_proof": None,
             "created_at": now_ekb().isoformat(),
@@ -224,6 +225,9 @@ class QueueStorage:
             if item.get("archive_id") == archive_id:
                 return item
         return None
+
+    def clear_history(self) -> None:
+        self._write_history([])
 
 
 storage = QueueStorage(Path("data/queue.json"), Path("data/history.json"))

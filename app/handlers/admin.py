@@ -30,13 +30,13 @@ def format_entry(item: dict) -> str:
     sess = sess_map.get(item.get("session_status"), item.get("session_status"))
     username = item.get("user_username")
     contact = username or item.get("user_fullname") or f"id:{item.get('user_id')}"
-    price = item.get("price")
-    price_text = f"{price}₽" if price else ""
+    price = item.get("price") or 2500
+    price_text = f"{price}₽"
     urgent = "срочно" if item.get("is_urgent") else "обычно"
     contact_text = f"@{contact}" if username else contact
     phone = item.get("phone") or "—"
     return (
-        f"#{item.get('position')} — {item.get('name')} / ДР: {item.get('birth_date')} / услуга: {item.get('service_id')} ({urgent} {price_text})\n"
+        f"#{item.get('position')} – {item.get('name')} / ДР: {item.get('birth_date')} / услуга: {item.get('service_id')} ({urgent} {price_text})\n"
         f"Оплата: {pay} | Сеанс: {sess} | Чек: {'да' if item.get('payment_proof') else 'нет'} | Контакт: {contact_text} | Телефон: {phone}"
     )
 
@@ -57,19 +57,15 @@ def build_admin_menu(super_admin: bool) -> str:
     if super_admin:
         return (
             "Админ-меню (высший уровень):\n"
-            "- /admin_pay <позиция> — отметить оплату как paid\n"
-            "- /admin_unpay <позиция> — вернуть в pending\n"
-            "- /admin_done <позиция> — отметить сеанс проведённым\n"
-            "- /admin_undone <позиция> — вернуть сеанс в pending\n"
-            "- /admin_show — показать очередь\n"
-            "- /admin_pending — заявки с чеками, ожидают проверки\n"
-            "- /admin_paid — оплаченные\n"
-            "- /admin_unconfirmed — без оплаты (pending/awaiting_review)\n"
-            "- /admin_delete <позиция> — удалить/архивировать (позиции сдвигаются)\n"
-            "- /admin_history — показать архив (последние)\n"
+            "- /admin_done <позиция> –отметить сеанс проведённым\n"
+            "- /admin_undone <позиция> –вернуть сеанс в pending\n"
+            "- /admin_show –показать очередь\n"
+            "- /admin_paid –оплаченные\n"
+            "- /admin_delete <позиция> –удалить/архивировать (позиции сдвигаются)\n"
+            "- /admin_history –показать архив (последние)\n"
             "Инлайн-меню: /admin (кнопки фильтров/пагинации/действий)\n"
         )
-    return "Модератор: доступен просмотр очереди через /admin_show, /admin_pending, /admin_paid, /admin_unconfirmed, /admin_history и инлайн-меню /admin."
+    return "Модератор: доступен просмотр очереди через /admin_show, /admin_paid, /admin_history и инлайн-меню /admin."
 
 
 # --- Инлайн UI ---
@@ -79,11 +75,11 @@ PAGE_SIZE = 5
 def build_filter_buttons(current: str) -> List[List[InlineKeyboardButton]]:
     row1 = [
         ("paid", "✅ Оплачено"),
-        ("unconf", "⏳ Неоплачено"),
+        ("done", "✔️ Проведено"),
+        ("notdone", "❌ Не проведено"),
     ]
     row2 = [
         ("all", "Все"),
-        ("await", "Чеки"),
         ("arch", "Архив"),
     ]
 
@@ -100,10 +96,10 @@ def build_filter_buttons(current: str) -> List[List[InlineKeyboardButton]]:
 def load_items(filter_key: str) -> List[Dict]:
     if filter_key == "paid":
         return storage.list_by_payment_status(["paid"])
-    if filter_key == "unconf":
-        return storage.list_by_payment_status(["pending", "awaiting_review"])
-    if filter_key == "await":
-        return [item for item in storage.list_all() if item.get("payment_status") == "awaiting_review"]
+    if filter_key == "done":
+        return [item for item in storage.list_all() if item.get("session_status") == "done"]
+    if filter_key == "notdone":
+        return [item for item in storage.list_all() if item.get("session_status") != "done"]
     if filter_key == "arch":
         return storage.list_history(limit=100)
     return storage.list_all()
@@ -115,7 +111,7 @@ def build_list_view(filter_key: str, page: int) -> tuple[str, InlineKeyboardMark
     start = (page - 1) * PAGE_SIZE
     end = start + PAGE_SIZE
     chunk = items[start:end]
-    titles = {"all": "Все", "paid": "Оплачено", "unconf": "Неоплач.", "await": "Чеки", "arch": "Архив"}
+    titles = {"all": "Все", "paid": "Оплачено", "done": "Проведено", "notdone": "Не проведено", "arch": "Архив"}
     lines = [f"Фильтр: {titles.get(filter_key, filter_key)}, страница {page}, всего {total}"]
     if not chunk:
         lines.append("Записей нет.")
@@ -127,17 +123,14 @@ def build_list_view(filter_key: str, page: int) -> tuple[str, InlineKeyboardMark
                 pay = pay_map.get(item.get("payment_status"), item.get("payment_status"))
                 sess = sess_map.get(item.get("session_status"), item.get("session_status"))
                 lines.append(
-                    f"#{item.get('archive_id')} (orig #{item.get('position')}) — {item.get('name')} / ДР: {item.get('birth_date')} / услуга: {item.get('service_id')}\n"
+                    f"#{item.get('archive_id')} (orig #{item.get('position')}) –{item.get('name')} / ДР: {item.get('birth_date')} / услуга: {item.get('service_id')}\n"
                     f"Оплата: {pay} | Сеанс: {sess} | Чек: {'да' if item.get('payment_proof') else 'нет'}"
                 )
             else:
                 lines.append(format_entry(item))
     kb_rows = []
     for item in chunk:
-        if filter_key == "arch":
-            arch_id = item.get("archive_id")
-            kb_rows.append([InlineKeyboardButton(text=f"#{arch_id} ▶️", callback_data=f"adm:architem:{arch_id}")])
-        else:
+        if filter_key != "arch":
             kb_rows.append([InlineKeyboardButton(text=f"#{item.get('position')} ▶️", callback_data=f"adm:item:{filter_key}:{item.get('position')}")])
     # Навигация
     nav = []
@@ -154,37 +147,21 @@ def build_list_view(filter_key: str, page: int) -> tuple[str, InlineKeyboardMark
 
 def build_item_actions(item: Dict, super_admin: bool, has_proof: bool, filter_key: str) -> InlineKeyboardMarkup:
     pos = item.get("position")
-    pay_status = item.get("payment_status")
-    sess_status = item.get("session_status")
     rows = []
     if super_admin:
         rows.append(
             [
                 InlineKeyboardButton(
-                    text=("✅ " if pay_status == "paid" else "⬜ ") + "Оплачено",
-                    callback_data=f"adm:pay:{pos}:paid",
-                ),
-                InlineKeyboardButton(
-                    text=("✅ " if pay_status != "paid" else "⬜ ") + "Не опл.",
-                    callback_data=f"adm:pay:{pos}:pending",
-                ),
-            ]
-        )
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    text=("✅ " if sess_status == "done" else "⬜ ") + "Сеанс ✅",
+                    text=("✅ " if item.get("session_status") == "done" else "⬜ ") + "Сеанс проведён",
                     callback_data=f"adm:session:{pos}:done",
                 ),
                 InlineKeyboardButton(
-                    text=("✅ " if sess_status != "done" else "⬜ ") + "Сеанс ⏳",
+                    text=("✅ " if item.get("session_status") != "done" else "⬜ ") + "Сеанс не проведён",
                     callback_data=f"adm:session:{pos}:pending",
                 ),
             ]
         )
         rows.append([InlineKeyboardButton(text="Удалить в архив", callback_data=f"adm:delete:{pos}")])
-    if has_proof:
-        rows.append([InlineKeyboardButton(text="📎 Показать чек", callback_data=f"adm:proof:{pos}")])
     rows.append([InlineKeyboardButton(text="⬅️ К списку", callback_data=f"adm:list:{filter_key}:1")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -217,30 +194,12 @@ def parse_position(args: str) -> int | None:
         return None
 
 
-@admin_router.message(Command("admin_pending"))
-async def handle_admin_pending(message: Message) -> None:
-    if not is_moderator(message.from_user.id):
-        await message.answer("Нет доступа.")
-        return
-    text, kb = build_list_view("await", 1)
-    await message.answer(text, reply_markup=kb, parse_mode=None)
-
-
 @admin_router.message(Command("admin_paid"))
 async def handle_admin_paid(message: Message) -> None:
     if not is_moderator(message.from_user.id):
         await message.answer("Нет доступа.")
         return
     text, kb = build_list_view("paid", 1)
-    await message.answer(text, reply_markup=kb, parse_mode=None)
-
-
-@admin_router.message(Command("admin_unconfirmed"))
-async def handle_admin_unconfirmed(message: Message) -> None:
-    if not is_moderator(message.from_user.id):
-        await message.answer("Нет доступа.")
-        return
-    text, kb = build_list_view("unconf", 1)
     await message.answer(text, reply_markup=kb, parse_mode=None)
 
 
@@ -265,7 +224,19 @@ async def handle_admin_history(message: Message) -> None:
         await message.answer("Нет доступа.")
         return
     text, kb = build_list_view("arch", 1)
+    # добавляем кнопку очистки архива
+    kb.inline_keyboard.append([InlineKeyboardButton(text="🗑 Очистить архив", callback_data="adm:clear_history")])
     await message.answer(text, reply_markup=kb, parse_mode=None)
+
+
+@admin_router.callback_query(F.data == "adm:clear_history")
+async def cb_clear_history(callback: CallbackQuery) -> None:
+    if not is_super_admin(callback.from_user.id):
+        await callback.answer("Нет доступа", show_alert=True)
+        return
+    storage.clear_history()
+    await callback.message.edit_text("Архив очищен.", parse_mode=None)
+    await callback.answer("Очищено")
 
 
 @admin_router.message(Command("admin_pay"))
@@ -363,13 +334,12 @@ async def cb_admin_item(callback: CallbackQuery) -> None:
     contact_base = username or item.get("user_fullname") or f"id:{item.get('user_id')}"
     contact_text = f"@{contact_base}" if username else contact_base
     phone = item.get("phone") or "—"
-    phone = item.get("phone") or "—"
     pay_map = {"pending": "неоплачено", "awaiting_review": "ожидает проверки", "paid": "оплачено"}
     sess_map = {"pending": "не проведён", "done": "проведён"}
     pay = pay_map.get(item.get("payment_status"), item.get("payment_status"))
     sess = sess_map.get(item.get("session_status"), item.get("session_status"))
-    price = item.get("price")
-    price_text = f"{price}₽" if price else ""
+    price = item.get("price") or 2500
+    price_text = f"{price}₽"
     urgent = "срочно" if item.get("is_urgent") else "обычно"
     lines = [
         f"Заявка #{item.get('position')}",
@@ -455,38 +425,5 @@ async def cb_admin_proof(callback: CallbackQuery) -> None:
 
 @admin_router.callback_query(F.data.startswith("adm:architem:"))
 async def cb_admin_architem(callback: CallbackQuery) -> None:
-    if not is_moderator(callback.from_user.id):
-        await callback.answer("Нет доступа", show_alert=True)
-        return
-    _, _, arch_id_str = callback.data.split(":", 2)
-    arch_id = int(arch_id_str)
-    item = storage.get_history_by_id(arch_id)
-    if not item:
-        await callback.answer("Не найдено", show_alert=True)
-        return
-    username = item.get("user_username")
-    contact_base = username or item.get("user_fullname") or f"id:{item.get('user_id')}"
-    contact_text = f"@{contact_base}" if username else contact_base
-    pay_map = {"pending": "неоплачено", "awaiting_review": "ожидает проверки", "paid": "оплачено"}
-    sess_map = {"pending": "не проведён", "done": "проведён"}
-    pay = pay_map.get(item.get("payment_status"), item.get("payment_status"))
-    sess = sess_map.get(item.get("session_status"), item.get("session_status"))
-    price = item.get("price")
-    price_text = f"{price}₽" if price else ""
-    urgent = "срочно" if item.get("is_urgent") else "обычно"
-    lines = [
-        f"Архив #{item.get('archive_id')}",
-        f"Имя: {item.get('name')}",
-        f"ДР: {item.get('birth_date')}",
-        f"Услуга: {item.get('service_id')} ({urgent} {price_text})",
-        f"Оплата: {pay}",
-        f"Сеанс: {sess}",
-        f"Чек: {'да' if item.get('payment_proof') else 'нет'}",
-        f"Создано: {item.get('created_at')}",
-        f"Архивировано: {item.get('archived_at')}",
-        f"Контакт: {contact_text}",
-        f"Телефон: {phone}",
-    ]
-    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⬅️ К списку", callback_data="adm:list:arch:1")]])
-    await callback.message.edit_text("\n".join(lines), reply_markup=kb, parse_mode=None)
-    await callback.answer()
+    # архивные элементы не раскрываем
+    await callback.answer("Просмотр архивной заявки отключен", show_alert=True)

@@ -1,11 +1,10 @@
 from aiogram import F, Router
-from aiogram.types import Message, ReplyKeyboardRemove
+from aiogram.types import LabeledPrice, Message, ReplyKeyboardRemove, PreCheckoutQuery
 
-from app.logger import get_logger
-from app.services.booking import get_service_by_id
-from app.texts import ask_phone_text, payment_prompt_text
-from app.keyboards.payment import payment_confirm_keyboard
+from app.config import settings
 from app.handlers.booking import get_session
+from app.logger import get_logger
+from app.texts import PREPAY_AMOUNT
 
 
 contact_router = Router()
@@ -19,8 +18,24 @@ async def handle_contact(message: Message) -> None:
         return
     phone = message.contact.phone_number
     session.phone = phone
-    session.step = "payment_confirm"
-    price = session.price or (get_service_by_id(session.service_id) or {}).get("price", 0)
+    session.step = "waiting_payment"
     log.info("Phone received user=%s phone=%s", message.from_user.id, phone)
     await message.answer("Спасибо! Телефон сохранён.", reply_markup=ReplyKeyboardRemove())
-    await message.answer(payment_prompt_text(price), reply_markup=payment_confirm_keyboard())
+    if not settings.PAYMENT_PROVIDER_TOKEN:
+        await message.answer("Платёжный токен не задан, обратитесь к администратору.")
+        return
+    prices = [LabeledPrice(label="Предоплата", amount=PREPAY_AMOUNT * 100)]
+    await message.answer_invoice(
+        title="Предоплата за сеанс",
+        description="Предоплата 2500₽ за запись.",
+        provider_token=settings.PAYMENT_PROVIDER_TOKEN,
+        currency="RUB",
+        prices=prices,
+        payload="prepay",
+    )
+
+
+@contact_router.pre_checkout_query()
+async def handle_pre_checkout(query: PreCheckoutQuery) -> None:
+    # Обязательный ответ, иначе Telegram показывает ошибку оплаты
+    await query.answer(ok=True)
