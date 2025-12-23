@@ -6,6 +6,8 @@ from app.config import settings
 def services_keyboard(selected_service_id: str | None) -> InlineKeyboardMarkup:
     rows = []
     for service in settings.SERVICES:
+        if service["id"] == "consult":
+            continue
         prefix = "✅ " if selected_service_id == service["id"] else ""
         rows.append(
             [
