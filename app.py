@@ -14,7 +14,7 @@ from app.logger import setup_logging
 
 
 async def main() -> None:
-    setup_logging(Path("logs"))
+    setup_logging(Path(settings.LOG_DIR))
     logging.getLogger(__name__).info("Starting bot")
     bot = Bot(token=settings.BOT_TOKEN, parse_mode="Markdown")
     dp = Dispatcher()

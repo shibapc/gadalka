@@ -1,6 +1,6 @@
 from app.config import settings
 from app.models import BookingSession
-from app.services.booking import get_service_by_id
+from app.services.booking import get_service_by_id, get_service_price
 
 PREPAY_AMOUNT = 2500
 
@@ -31,8 +31,20 @@ def ask_name_text() -> str:
     return "Введите ваше имя"
 
 
+def ask_full_name_text() -> str:
+    return "Введите ФИО"
+
+
+def ask_intuitive_number_text() -> str:
+    return "Введите вашу интуитивную цифру от 0 до 78."
+
+
 def ask_problem_text() -> str:
     return "Опишите вашу проблему максимально подробно."
+
+
+def ask_problem_brief_text() -> str:
+    return "Кратко опишите сердце вашего запроса (1-2 предложения)."
 
 
 def ask_phone_text() -> str:
@@ -62,7 +74,8 @@ def payment_proof_received_text() -> str:
 
 def queue_confirmation_text(session: BookingSession) -> str:
     service = get_service_by_id(session.service_id) or {"title": session.service_id, "price": "—"}
-    price_text = f"{PREPAY_AMOUNT}₽ (предоплата)"
+    price = session.price or get_service_price(session.service_id or "", PREPAY_AMOUNT)
+    price_text = f"{price}₽"
     urgency = "Срочная (в начале очереди)" if session.is_urgent else "Обычная"
     return (
         "Заявка принята ✅\n\n"

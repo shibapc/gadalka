@@ -10,12 +10,14 @@ from app.keyboards.priority import priority_keyboard
 from app.keyboards.services import services_keyboard
 from app.logger import get_logger
 from app.models import BookingSession
-from app.services.booking import get_service_by_id, now_ekb, validate_birth_date
+from app.services.booking import get_service_by_id, get_service_price, now_ekb, validate_birth_date
 from app.storage import storage
 from app.texts import (
-    PREPAY_AMOUNT,
     ask_birth_date_text,
+    ask_full_name_text,
+    ask_intuitive_number_text,
     ask_name_text,
+    ask_problem_brief_text,
     ask_problem_text,
     booking_prompt_text,
     ask_phone_text,
@@ -51,8 +53,15 @@ async def handle_service(callback: CallbackQuery) -> None:
     service_id = callback.data.split(":", 1)[1]
     session = get_session(callback.from_user.id)
     session.service_id = service_id
-    session.step = "priority"
     await callback.message.edit_text(service_selected_text(service_id))
+    if service_id == "express":
+        session.is_urgent = False
+        session.price = get_service_price(service_id)
+        session.step = "birth_date"
+        await callback.message.answer(ask_birth_date_text())
+        await callback.answer("Услуга выбрана")
+        return
+    session.step = "priority"
     await callback.message.answer(
         "Выберите тип записи:\n- Обычная — в общей очереди\n- Срочная — в начало очереди (без доплаты)\n",
         reply_markup=priority_keyboard(),
@@ -68,7 +77,7 @@ async def handle_priority(callback: CallbackQuery) -> None:
         await callback.answer()
         return
     session.is_urgent = choice == "urgent"
-    session.price = PREPAY_AMOUNT  # фиксированная предоплата
+    session.price = get_service_price(session.service_id or "")
     session.step = "birth_date"
     await callback.message.answer(ask_birth_date_text())
     await callback.answer("Тип выбран")
@@ -89,17 +98,41 @@ async def handle_steps(message: Message) -> None:
             return
         session.birth_date = parsed
         session.step = "name"
-        await message.answer(ask_name_text())
+        if session.service_id == "express":
+            await message.answer(ask_full_name_text())
+        else:
+            await message.answer(ask_name_text())
         return
 
     if session.step == "name":
         session.name = text
+        if session.service_id == "express":
+            session.step = "intuition_number"
+            await message.answer(ask_intuitive_number_text())
+        else:
+            session.step = "problem"
+            await message.answer(ask_problem_text())
+        return
+
+    if session.step == "intuition_number":
+        try:
+            number = int(text)
+        except ValueError:
+            await message.answer("Введите число от 0 до 78.")
+            return
+        if number < 0 or number > 78:
+            await message.answer("Введите число от 0 до 78.")
+            return
+        session.intuitive_number = number
         session.step = "problem"
-        await message.answer(ask_problem_text())
+        await message.answer(ask_problem_brief_text())
         return
 
     if session.step == "problem":
-        session.problem = text
+        if session.service_id == "express" and session.intuitive_number is not None:
+            session.problem = f"Интуитивная цифра: {session.intuitive_number}\nЗапрос: {text}"
+        else:
+            session.problem = text
         session.step = "phone"
         await message.answer(ask_phone_text(), reply_markup=contact_keyboard())
         return
@@ -128,7 +161,7 @@ async def handle_successful_payment(message: Message) -> None:
         user_username=message.from_user.username,
         user_fullname=full_name or None,
         is_urgent=session.is_urgent,
-        price=PREPAY_AMOUNT,
+        price=session.price or get_service_price(session.service_id or ""),
         phone=session.phone,
         payment_status="paid",
     )

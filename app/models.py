@@ -9,6 +9,7 @@ class BookingSession:
     price: Optional[int] = None
     birth_date: Optional[str] = None
     name: Optional[str] = None
+    intuitive_number: Optional[int] = None
     problem: Optional[str] = None
     phone: Optional[str] = None
     last_position: Optional[int] = None

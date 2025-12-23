@@ -4,7 +4,7 @@ from aiogram.types import LabeledPrice, Message, ReplyKeyboardRemove, PreCheckou
 from app.config import settings
 from app.handlers.booking import get_session
 from app.logger import get_logger
-from app.texts import PREPAY_AMOUNT
+from app.services.booking import get_service_by_id, get_service_price
 
 
 contact_router = Router()
@@ -24,10 +24,12 @@ async def handle_contact(message: Message) -> None:
     if not settings.PAYMENT_PROVIDER_TOKEN:
         await message.answer("Платёжный токен не задан, обратитесь к администратору.")
         return
-    prices = [LabeledPrice(label="Предоплата", amount=PREPAY_AMOUNT * 100)]
+    price = session.price or get_service_price(session.service_id or "")
+    service = get_service_by_id(session.service_id or "") or {"title": "Запись"}
+    prices = [LabeledPrice(label=service["title"], amount=price * 100)]
     await message.answer_invoice(
-        title="Предоплата за сеанс",
-        description="Предоплата 2500₽ за запись.",
+        title=f"Оплата: {service['title']}",
+        description=f"Оплата {price}₽ за запись.",
         provider_token=settings.PAYMENT_PROVIDER_TOKEN,
         currency="RUB",
         prices=prices,

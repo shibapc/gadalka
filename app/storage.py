@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -226,8 +227,20 @@ class QueueStorage:
                 return item
         return None
 
+    def history_stats(self, default_price: int = 2500, service_id: str | None = None) -> tuple[int, int]:
+        history = self._read_history()
+        if service_id:
+            history = [item for item in history if item.get("service_id") == service_id]
+        total = len(history)
+        total_sum = sum(
+            item.get("price") if isinstance(item.get("price"), int) else default_price for item in history
+        )
+        return total, total_sum
+
     def clear_history(self) -> None:
         self._write_history([])
 
 
-storage = QueueStorage(Path("data/queue.json"), Path("data/history.json"))
+QUEUE_PATH = Path(os.getenv("STORAGE_PATH", "data/queue.json"))
+HISTORY_PATH = Path(os.getenv("HISTORY_PATH", "data/history.json"))
+storage = QueueStorage(QUEUE_PATH, HISTORY_PATH)

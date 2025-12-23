@@ -9,6 +9,12 @@ def get_service_by_id(service_id: str) -> Optional[Dict]:
     return next((item for item in settings.SERVICES if item["id"] == service_id), None)
 
 
+def get_service_price(service_id: str, default_price: int = 2500) -> int:
+    service = get_service_by_id(service_id) or {}
+    price = service.get("price")
+    return price if isinstance(price, int) else default_price
+
+
 def now_ekb() -> datetime:
     return datetime.now(ZoneInfo("Asia/Yekaterinburg"))
 

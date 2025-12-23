@@ -14,12 +14,12 @@
 - `app/handlers/admin.py` –команды админов/модераторов.
 
 ## Запуск
-1) Скопируйте шаблон окружения и вставьте токен:
+1) Создайте `.env` и вставьте токен:
 ```
-cp .env.example .env
+BOT_TOKEN=ваш_токен
+ADMIN_IDS=123,456
+MODERATOR_IDS=789
 ```
-   Отредактируйте `.env`, подставьте `BOT_TOKEN`.
-   Добавьте `ADMIN_IDS` и `MODERATOR_IDS` через запятую (Telegram user id).
 
 2) Установите зависимости (Python 3.10+):
 ```
@@ -31,6 +31,23 @@ pip install -r requirements.txt
 3) Запустите бота:
 ```
 python app.py
+```
+
+## Второй (тестовый) бот
+Чтобы держать прод и тест отдельно, создайте второй файл окружения и отдельные файлы данных.
+
+Пример `test.env`:
+```
+ENV=test
+BOT_TOKEN=тестовый_токен
+ADMIN_IDS=123
+MODERATOR_IDS=456
+LOG_DIR=logs/test
+```
+
+Запуск тестового бота:
+```
+ENV_FILE=test.env python app.py
 ```
 
 ## Что умеет сейчас

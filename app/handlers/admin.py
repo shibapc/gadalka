@@ -9,6 +9,7 @@ from app.config import settings
 from app.keyboards.main import main_menu_keyboard
 from app.logger import get_logger
 from app.storage import storage
+from app.services.booking import get_service_by_id
 
 
 admin_router = Router()
@@ -23,6 +24,14 @@ def is_moderator(user_id: int) -> bool:
     return user_id in settings.MODERATOR_IDS or is_super_admin(user_id)
 
 
+def service_label(service_id: str) -> str:
+    label_map = {"consult": "Гадание", "express": "Экспресс-расклад"}
+    if service_id in label_map:
+        return label_map[service_id]
+    service = get_service_by_id(service_id) or {}
+    return service.get("title") or service_id
+
+
 def format_entry(item: dict) -> str:
     pay_map = {"pending": "неоплачено", "awaiting_review": "ожидает проверки", "paid": "оплачено"}
     sess_map = {"pending": "не проведён", "done": "проведён"}
@@ -30,7 +39,10 @@ def format_entry(item: dict) -> str:
     sess = sess_map.get(item.get("session_status"), item.get("session_status"))
     username = item.get("user_username")
     contact = username or item.get("user_fullname") or f"id:{item.get('user_id')}"
-    price = item.get("price") or 2500
+    price = item.get("price")
+    if price is None:
+        service = get_service_by_id(item.get("service_id", "")) or {}
+        price = service.get("price", 2500)
     price_text = f"{price}₽"
     urgent = "срочно" if item.get("is_urgent") else "обычно"
     contact_text = f"@{contact}" if username else contact
@@ -68,11 +80,48 @@ def build_admin_menu(super_admin: bool) -> str:
     return "Модератор: доступен просмотр очереди через /admin_show, /admin_paid, /admin_history и инлайн-меню /admin."
 
 
+def build_service_select_keyboard(filter_key: str = "all") -> InlineKeyboardMarkup:
+    rows = []
+    for service in settings.SERVICES:
+        label = service_label(service["id"])
+        rows.append([InlineKeyboardButton(text=label, callback_data=f"adm:service:{service['id']}:{filter_key}")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def send_service_select(message: Message, filter_key: str) -> None:
+    await message.answer("Выберите раздел:", reply_markup=build_service_select_keyboard(filter_key), parse_mode=None)
+
+
+def parse_list_callback(data: str) -> tuple[str, str | None, int]:
+    parts = data.split(":")
+    if len(parts) == 4:
+        _, _, filter_key, page_str = parts
+        service_id = None
+    else:
+        _, _, filter_key, service_id, page_str = parts
+        if service_id == "all":
+            service_id = None
+    return filter_key, service_id, int(page_str)
+
+
+def parse_item_callback(data: str) -> tuple[str, str | None, int]:
+    parts = data.split(":")
+    if len(parts) == 4:
+        _, _, filter_key, pos_str = parts
+        service_id = None
+    else:
+        _, _, filter_key, service_id, pos_str = parts
+        if service_id == "all":
+            service_id = None
+    return filter_key, service_id, int(pos_str)
+
+
 # --- Инлайн UI ---
 PAGE_SIZE = 5
 
 
-def build_filter_buttons(current: str) -> List[List[InlineKeyboardButton]]:
+def build_filter_buttons(current: str, service_id: str | None) -> List[List[InlineKeyboardButton]]:
+    service_code = service_id or "all"
     row1 = [
         ("paid", "✅ Оплачено"),
         ("done", "✔️ Проведено"),
@@ -85,7 +134,7 @@ def build_filter_buttons(current: str) -> List[List[InlineKeyboardButton]]:
 
     def btn(code: str, label: str) -> InlineKeyboardButton:
         prefix = "☑️ " if code == current else ""
-        return InlineKeyboardButton(text=prefix + label, callback_data=f"adm:list:{code}:1")
+        return InlineKeyboardButton(text=prefix + label, callback_data=f"adm:list:{code}:{service_code}:1")
 
     return [
         [btn(code, label) for code, label in row1],
@@ -93,26 +142,35 @@ def build_filter_buttons(current: str) -> List[List[InlineKeyboardButton]]:
     ]
 
 
-def load_items(filter_key: str) -> List[Dict]:
+def load_items(filter_key: str, service_id: str | None) -> List[Dict]:
     if filter_key == "paid":
-        return storage.list_by_payment_status(["paid"])
-    if filter_key == "done":
-        return [item for item in storage.list_all() if item.get("session_status") == "done"]
-    if filter_key == "notdone":
-        return [item for item in storage.list_all() if item.get("session_status") != "done"]
-    if filter_key == "arch":
-        return storage.list_history(limit=100)
-    return storage.list_all()
+        items = storage.list_by_payment_status(["paid"])
+    elif filter_key == "done":
+        items = [item for item in storage.list_all() if item.get("session_status") == "done"]
+    elif filter_key == "notdone":
+        items = [item for item in storage.list_all() if item.get("session_status") != "done"]
+    elif filter_key == "arch":
+        items = storage.list_history(limit=100)
+    else:
+        items = storage.list_all()
+    if service_id:
+        items = [item for item in items if item.get("service_id") == service_id]
+    return items
 
 
-def build_list_view(filter_key: str, page: int) -> tuple[str, InlineKeyboardMarkup]:
-    items = load_items(filter_key)
+def build_list_view(filter_key: str, page: int, service_id: str | None) -> tuple[str, InlineKeyboardMarkup]:
+    items = load_items(filter_key, service_id)
     total = len(items)
     start = (page - 1) * PAGE_SIZE
     end = start + PAGE_SIZE
     chunk = items[start:end]
     titles = {"all": "Все", "paid": "Оплачено", "done": "Проведено", "notdone": "Не проведено", "arch": "Архив"}
     lines = [f"Фильтр: {titles.get(filter_key, filter_key)}, страница {page}, всего {total}"]
+    if service_id:
+        lines.append(f"Раздел: {service_label(service_id)}")
+    if filter_key == "arch":
+        total_orders, total_sum = storage.history_stats(service_id=service_id)
+        lines.append(f"Статистика: всего заказов {total_orders}, сумма {total_sum}₽")
     if not chunk:
         lines.append("Записей нет.")
     else:
@@ -129,24 +187,39 @@ def build_list_view(filter_key: str, page: int) -> tuple[str, InlineKeyboardMark
             else:
                 lines.append(format_entry(item))
     kb_rows = []
+    service_code = service_id or "all"
     for item in chunk:
         if filter_key != "arch":
-            kb_rows.append([InlineKeyboardButton(text=f"#{item.get('position')} ▶️", callback_data=f"adm:item:{filter_key}:{item.get('position')}")])
+            kb_rows.append(
+                [
+                    InlineKeyboardButton(
+                        text=f"#{item.get('position')} ▶️",
+                        callback_data=f"adm:item:{filter_key}:{service_code}:{item.get('position')}",
+                    )
+                ]
+            )
     # Навигация
     nav = []
     if start > 0:
-        nav.append(InlineKeyboardButton(text="⬅️", callback_data=f"adm:list:{filter_key}:{page-1}"))
+        nav.append(InlineKeyboardButton(text="⬅️", callback_data=f"adm:list:{filter_key}:{service_code}:{page-1}"))
     if end < total:
-        nav.append(InlineKeyboardButton(text="➡️", callback_data=f"adm:list:{filter_key}:{page+1}"))
+        nav.append(InlineKeyboardButton(text="➡️", callback_data=f"adm:list:{filter_key}:{service_code}:{page+1}"))
     if nav:
         kb_rows.append(nav)
     # Фильтры
-    kb_rows.extend(build_filter_buttons(filter_key))
+    kb_rows.extend(build_filter_buttons(filter_key, service_id))
     return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=kb_rows)
 
 
-def build_item_actions(item: Dict, super_admin: bool, has_proof: bool, filter_key: str) -> InlineKeyboardMarkup:
+def build_item_actions(
+    item: Dict,
+    super_admin: bool,
+    has_proof: bool,
+    filter_key: str,
+    service_id: str | None,
+) -> InlineKeyboardMarkup:
     pos = item.get("position")
+    service_code = service_id or "all"
     rows = []
     if super_admin:
         rows.append(
@@ -161,8 +234,8 @@ def build_item_actions(item: Dict, super_admin: bool, has_proof: bool, filter_ke
                 ),
             ]
         )
-        rows.append([InlineKeyboardButton(text="Удалить в архив", callback_data=f"adm:delete:{pos}")])
-    rows.append([InlineKeyboardButton(text="⬅️ К списку", callback_data=f"adm:list:{filter_key}:1")])
+        rows.append([InlineKeyboardButton(text="Удалить в архив", callback_data=f"adm:delete:{service_code}:{pos}")])
+    rows.append([InlineKeyboardButton(text="⬅️ К списку", callback_data=f"adm:list:{filter_key}:{service_code}:1")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -173,8 +246,7 @@ async def handle_admin_root(message: Message) -> None:
         await message.answer("Нет доступа.")
         return
     await message.answer(build_admin_menu(is_super_admin(user_id)), parse_mode=None)
-    text, kb = build_list_view("all", 1)
-    await message.answer(text, reply_markup=kb, parse_mode=None)
+    await send_service_select(message, "all")
 
 
 @admin_router.message(Command("admin_show"))
@@ -183,8 +255,7 @@ async def handle_admin_show(message: Message) -> None:
     if not is_moderator(user_id):
         await message.answer("Нет доступа.")
         return
-    text, kb = build_list_view("all", 1)
-    await message.answer(text, reply_markup=kb, parse_mode=None)
+    await send_service_select(message, "all")
 
 
 def parse_position(args: str) -> int | None:
@@ -199,8 +270,7 @@ async def handle_admin_paid(message: Message) -> None:
     if not is_moderator(message.from_user.id):
         await message.answer("Нет доступа.")
         return
-    text, kb = build_list_view("paid", 1)
-    await message.answer(text, reply_markup=kb, parse_mode=None)
+    await send_service_select(message, "paid")
 
 
 @admin_router.message(Command("admin_delete"))
@@ -223,10 +293,7 @@ async def handle_admin_history(message: Message) -> None:
     if not is_moderator(message.from_user.id):
         await message.answer("Нет доступа.")
         return
-    text, kb = build_list_view("arch", 1)
-    # добавляем кнопку очистки архива
-    kb.inline_keyboard.append([InlineKeyboardButton(text="🗑 Очистить архив", callback_data="adm:clear_history")])
-    await message.answer(text, reply_markup=kb, parse_mode=None)
+    await send_service_select(message, "arch")
 
 
 @admin_router.callback_query(F.data == "adm:clear_history")
@@ -304,14 +371,31 @@ async def handle_admin_undone(message: Message) -> None:
 
 
 # --- Callback-based UI ---
+@admin_router.callback_query(F.data.startswith("adm:service:"))
+async def cb_admin_service(callback: CallbackQuery) -> None:
+    if not is_moderator(callback.from_user.id):
+        await callback.answer("Нет доступа", show_alert=True)
+        return
+    _, _, service_id, filter_key = callback.data.split(":", 3)
+    text, kb = build_list_view(filter_key, 1, service_id)
+    if filter_key == "arch":
+        kb.inline_keyboard.append([InlineKeyboardButton(text="🗑 Очистить архив", callback_data="adm:clear_history")])
+    try:
+        await callback.message.edit_text(text, reply_markup=kb, parse_mode=None)
+    except TelegramBadRequest:
+        await callback.message.answer(text, reply_markup=kb, parse_mode=None)
+    await callback.answer()
+
+
 @admin_router.callback_query(F.data.startswith("adm:list:"))
 async def cb_admin_list(callback: CallbackQuery) -> None:
     if not is_moderator(callback.from_user.id):
         await callback.answer("Нет доступа", show_alert=True)
         return
-    _, _, filter_key, page_str = callback.data.split(":", 3)
-    page = int(page_str)
-    text, kb = build_list_view(filter_key, page)
+    filter_key, service_id, page = parse_list_callback(callback.data)
+    text, kb = build_list_view(filter_key, page, service_id)
+    if filter_key == "arch":
+        kb.inline_keyboard.append([InlineKeyboardButton(text="🗑 Очистить архив", callback_data="adm:clear_history")])
     try:
         await callback.message.edit_text(text, reply_markup=kb, parse_mode=None)
     except TelegramBadRequest:
@@ -324,8 +408,7 @@ async def cb_admin_item(callback: CallbackQuery) -> None:
     if not is_moderator(callback.from_user.id):
         await callback.answer("Нет доступа", show_alert=True)
         return
-    _, _, filter_key, pos_str = callback.data.split(":", 3)
-    pos = int(pos_str)
+    filter_key, service_id, pos = parse_item_callback(callback.data)
     item = storage.get_by_position(pos)
     if not item:
         await callback.answer("Не найдено", show_alert=True)
@@ -338,7 +421,10 @@ async def cb_admin_item(callback: CallbackQuery) -> None:
     sess_map = {"pending": "не проведён", "done": "проведён"}
     pay = pay_map.get(item.get("payment_status"), item.get("payment_status"))
     sess = sess_map.get(item.get("session_status"), item.get("session_status"))
-    price = item.get("price") or 2500
+    price = item.get("price")
+    if price is None:
+        service = get_service_by_id(item.get("service_id", "")) or {}
+        price = service.get("price", 2500)
     price_text = f"{price}₽"
     urgent = "срочно" if item.get("is_urgent") else "обычно"
     lines = [
@@ -353,7 +439,13 @@ async def cb_admin_item(callback: CallbackQuery) -> None:
         f"Контакт: {contact_text}",
         f"Телефон: {phone}",
     ]
-    kb = build_item_actions(item, is_super_admin(callback.from_user.id), bool(item.get("payment_proof")), filter_key)
+    kb = build_item_actions(
+        item,
+        is_super_admin(callback.from_user.id),
+        bool(item.get("payment_proof")),
+        filter_key,
+        service_id,
+    )
     await callback.message.edit_text("\n".join(lines), reply_markup=kb, parse_mode=None)
     await callback.answer()
 
@@ -389,10 +481,17 @@ async def cb_admin_delete(callback: CallbackQuery) -> None:
     if not is_super_admin(callback.from_user.id):
         await callback.answer("Нет доступа", show_alert=True)
         return
-    _, _, pos_str = callback.data.split(":", 2)
+    parts = callback.data.split(":", 3)
+    if len(parts) == 3:
+        _, _, pos_str = parts
+        service_id = None
+    else:
+        _, _, service_id, pos_str = parts
+        if service_id == "all":
+            service_id = None
     pos = int(pos_str)
     if storage.delete_and_archive(pos):
-        text, kb = build_list_view("all", 1)
+        text, kb = build_list_view("all", 1, service_id)
         await callback.message.edit_text(text, reply_markup=kb, parse_mode=None)
         await callback.answer("Удалено и обновлено")
     else:
