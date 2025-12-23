@@ -8,7 +8,6 @@ from app.config import settings
 from app.handlers.admin import admin_router
 from app.handlers.booking import booking_router
 from app.handlers.contact import contact_router
-from app.handlers.proofs import proofs_router
 from app.handlers.start import start_router
 from app.logger import setup_logging
 
@@ -20,7 +19,6 @@ async def main() -> None:
     dp = Dispatcher()
     dp.include_router(admin_router)
     dp.include_router(contact_router)
-    dp.include_router(proofs_router)
     dp.include_router(start_router)
     dp.include_router(booking_router)
     await dp.start_polling(bot)

@@ -54,27 +54,6 @@ def ask_phone_text() -> str:
     return "Поделитесь номером телефона, чтобы мы могли связаться. Нажмите кнопку ниже."
 
 
-def payment_prompt_text(total_price: int) -> str:
-    rest = max(total_price - PREPAY_AMOUNT, 0)
-    rest_text = f"Остаток {rest}₽ будет оплачен отдельно." if rest else ""
-    return (
-        f"Для подтверждения записи нужна предоплата {PREPAY_AMOUNT}₽.\n"
-        f"{rest_text}\n"
-        "Реквизиты (пример):\n"
-        "СБП: 4100 0000 0000 0000\n"
-        "Комментарий к платежу: Ваше имя + дата рождения\n"
-        "После оплаты нажмите «Подтвердить оплату» и отправьте чек сюда."
-    )
-
-
-def ask_payment_proof_text() -> str:
-    return "Отправьте фото/скан чека. Это нужно для подтверждения оплаты администратором."
-
-
-def payment_proof_received_text() -> str:
-    return "Чек получен. Администратор проверит оплату и подтвердит запись. С вами свяжутся."
-
-
 def queue_confirmation_text(session: BookingSession) -> str:
     service = get_service_by_id(session.service_id) or {"title": session.service_id, "price": "—"}
     price = session.price or get_service_price(session.service_id or "", PREPAY_AMOUNT)

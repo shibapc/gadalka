@@ -12,6 +12,8 @@ if os.getenv("STORAGE_PATH") is None:
     os.environ["STORAGE_PATH"] = "data/queue_test.json" if ENV_MODE == "test" else "data/queue.json"
 if os.getenv("HISTORY_PATH") is None:
     os.environ["HISTORY_PATH"] = "data/history_test.json" if ENV_MODE == "test" else "data/history.json"
+if os.getenv("REVIEWS_PATH") is None:
+    os.environ["REVIEWS_PATH"] = "data/reviews_test.json" if ENV_MODE == "test" else "data/reviews.json"
 
 
 @dataclass(frozen=True)

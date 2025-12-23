@@ -44,7 +44,11 @@ def get_session(user_id: int) -> BookingSession:
 @booking_router.callback_query(F.data == "start_booking")
 async def handle_start_booking(callback: CallbackQuery) -> None:
     session = reset_session(callback.from_user.id)
-    await callback.message.edit_text(booking_prompt_text(), reply_markup=services_keyboard(session.service_id))
+    await callback.message.edit_text(
+        booking_prompt_text(),
+        reply_markup=services_keyboard(session.service_id),
+        parse_mode=None,
+    )
     await callback.answer()
 
 
@@ -95,6 +99,26 @@ async def handle_steps(message: Message) -> None:
 
     text = message.text.strip()
 
+    if session.step == "review":
+        if len(text) < 100:
+            await message.answer("Отзыв должен быть минимум 100 символов. Попробуйте ещё раз.")
+            return
+        full_name = " ".join(filter(None, [message.from_user.first_name, message.from_user.last_name]))
+        storage.add_review(
+            user_id=message.from_user.id,
+            service_id=session.service_id or "",
+            text=text,
+            user_username=message.from_user.username,
+            user_fullname=full_name or None,
+            name=session.review_name,
+            birth_date=session.review_birth_date,
+            order_created_at=session.review_order_created_at,
+            order_id=session.review_order_id,
+        )
+        await message.answer("Спасибо за отзыв!", reply_markup=main_menu_keyboard())
+        reset_session(message.from_user.id)
+        return
+
     if session.step == "birth_date":
         ok, parsed = validate_birth_date(text)
         if not ok:
@@ -143,6 +167,17 @@ async def handle_steps(message: Message) -> None:
 
     # waiting for payment now handled in payment handler
     return
+
+
+@booking_router.callback_query(F.data == "review_skip")
+async def handle_review_skip(callback: CallbackQuery) -> None:
+    session = get_session(callback.from_user.id)
+    if session.step != "review":
+        await callback.answer()
+        return
+    reset_session(callback.from_user.id)
+    await callback.message.answer("Спасибо! Возвращаю в меню.", reply_markup=main_menu_keyboard())
+    await callback.answer()
 
 
 @booking_router.message(F.successful_payment)

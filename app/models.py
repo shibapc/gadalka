@@ -13,4 +13,8 @@ class BookingSession:
     problem: Optional[str] = None
     phone: Optional[str] = None
     last_position: Optional[int] = None
-    step: Optional[str] = None  # priority -> birth_date -> name -> problem -> phone -> payment_confirm -> payment_proof
+    step: Optional[str] = None  # priority -> birth_date -> name -> problem -> phone -> waiting_payment -> review
+    review_name: Optional[str] = None
+    review_birth_date: Optional[str] = None
+    review_order_created_at: Optional[str] = None
+    review_order_id: Optional[int] = None
