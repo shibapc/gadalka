@@ -118,10 +118,10 @@ async def handle_steps(message: Message) -> None:
         try:
             number = int(text)
         except ValueError:
-            await message.answer("Введите число от 0 до 78.")
+            await message.answer("Введите число от 0 до 22.")
             return
-        if number < 0 or number > 78:
-            await message.answer("Введите число от 0 до 78.")
+        if number < 0 or number > 22:
+            await message.answer("Введите число от 0 до 22.")
             return
         session.intuitive_number = number
         session.step = "problem"

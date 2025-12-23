@@ -36,7 +36,7 @@ def ask_full_name_text() -> str:
 
 
 def ask_intuitive_number_text() -> str:
-    return "Введите вашу интуитивную цифру от 0 до 78."
+    return "Введите вашу интуитивную цифру от 0 до 22."
 
 
 def ask_problem_text() -> str:
