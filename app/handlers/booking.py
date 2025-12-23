@@ -54,6 +54,10 @@ async def handle_service(callback: CallbackQuery) -> None:
     session = get_session(callback.from_user.id)
     session.service_id = service_id
     await callback.message.edit_text(service_selected_text(service_id))
+    if service_id == "consult":
+        await callback.message.answer("Запись на гадание пока в разработке.", reply_markup=main_menu_keyboard())
+        await callback.answer("В разработке")
+        return
     if service_id == "express":
         session.is_urgent = False
         session.price = get_service_price(service_id)
