@@ -32,6 +32,18 @@ def service_label(service_id: str) -> str:
     return service.get("title") or service_id
 
 
+def split_express_problem(problem: str | None) -> tuple[str | None, str | None]:
+    if not problem:
+        return None, None
+    prefix = "Интуитивная цифра: "
+    if problem.startswith(prefix):
+        rest = problem[len(prefix):]
+        if "\nЗапрос: " in rest:
+            number_part, text_part = rest.split("\nЗапрос: ", 1)
+            return number_part.strip() or None, text_part.strip() or None
+    return None, problem
+
+
 def format_entry(item: dict) -> str:
     pay_map = {"pending": "неоплачено", "awaiting_review": "ожидает проверки", "paid": "оплачено"}
     sess_map = {"pending": "не проведён", "done": "проведён"}
@@ -174,18 +186,13 @@ def build_list_view(filter_key: str, page: int, service_id: str | None) -> tuple
     if not chunk:
         lines.append("Записей нет.")
     else:
+        sess_map = {"pending": "не проведён", "done": "проведён"}
         for item in chunk:
+            sess = sess_map.get(item.get("session_status"), item.get("session_status"))
             if filter_key == "arch":
-                pay_map = {"pending": "неоплачено", "awaiting_review": "ожидает проверки", "paid": "оплачено"}
-                sess_map = {"pending": "не проведён", "done": "проведён"}
-                pay = pay_map.get(item.get("payment_status"), item.get("payment_status"))
-                sess = sess_map.get(item.get("session_status"), item.get("session_status"))
-                lines.append(
-                    f"#{item.get('archive_id')} (orig #{item.get('position')}) –{item.get('name')} / ДР: {item.get('birth_date')} / услуга: {item.get('service_id')}\n"
-                    f"Оплата: {pay} | Сеанс: {sess} | Чек: {'да' if item.get('payment_proof') else 'нет'}"
-                )
+                lines.append(f"#{item.get('archive_id')} – {item.get('name')} ({sess})")
             else:
-                lines.append(format_entry(item))
+                lines.append(f"#{item.get('position')} – {item.get('name')} ({sess})")
     kb_rows = []
     service_code = service_id or "all"
     for item in chunk:
@@ -435,6 +442,8 @@ async def cb_admin_item(callback: CallbackQuery) -> None:
         f"Оплата: {pay}",
         f"Сеанс: {sess}",
         f"Чек: {'да' if item.get('payment_proof') else 'нет'}",
+        f"Интуитивная цифра: {split_express_problem(item.get('problem'))[0] or '—'}",
+        f"Описание: {split_express_problem(item.get('problem'))[1] or '—'}",
         f"Создано: {item.get('created_at')}",
         f"Контакт: {contact_text}",
         f"Телефон: {phone}",
