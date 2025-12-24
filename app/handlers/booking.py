@@ -175,6 +175,8 @@ async def handle_review_skip(callback: CallbackQuery) -> None:
     if session.step != "review":
         await callback.answer()
         return
+    if isinstance(session.review_order_id, int):
+        storage.set_review_skipped(session.review_order_id)
     reset_session(callback.from_user.id)
     await callback.message.answer("Спасибо! Возвращаю в меню.", reply_markup=main_menu_keyboard())
     await callback.answer()

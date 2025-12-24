@@ -59,6 +59,9 @@ class QueueStorage:
             if "result_payload" not in item:
                 item["result_payload"] = None
                 dirty = True
+            if "review_skipped_at" not in item:
+                item["review_skipped_at"] = None
+                dirty = True
             if "payment_status" not in item:
                 item["payment_status"] = "pending"
                 dirty = True
@@ -120,6 +123,9 @@ class QueueStorage:
                 dirty = True
             if "result_payload" not in item:
                 item["result_payload"] = None
+                dirty = True
+            if "review_skipped_at" not in item:
+                item["review_skipped_at"] = None
                 dirty = True
             if "user_username" not in item:
                 item["user_username"] = None
@@ -216,6 +222,7 @@ class QueueStorage:
             "session_status": "pending",
             "result_sent": False,
             "result_payload": None,
+            "review_skipped_at": None,
             "created_at": now_ekb().isoformat(),
         }
         data.append(new_item)
@@ -328,6 +335,22 @@ class QueueStorage:
             if item.get("order_id") == order_id:
                 item["result_sent"] = True
                 item["result_payload"] = payload
+                self._write_history(history)
+                return True
+        return False
+
+    def set_review_skipped(self, order_id: int) -> bool:
+        stamp = now_ekb().isoformat()
+        data = self._read()
+        for item in data:
+            if item.get("order_id") == order_id:
+                item["review_skipped_at"] = stamp
+                self._write(data)
+                return True
+        history = self._read_history()
+        for item in history:
+            if item.get("order_id") == order_id:
+                item["review_skipped_at"] = stamp
                 self._write_history(history)
                 return True
         return False

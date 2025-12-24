@@ -68,5 +68,5 @@ def queue_confirmation_text(session: BookingSession) -> str:
         f"*Имя:* {session.name}\n"
         "*Описание:*\n"
         f"{session.problem}\n\n"
-        "С вами свяжутся. Оплата получена автоматически."
+        "Оплата получена автоматически. Скоро вам придет сообщение с раскладом"
     )

@@ -633,8 +633,12 @@ async def cb_admin_review(callback: CallbackQuery) -> None:
     name = item.get("name") or item.get("user_fullname") or f"id:{item.get('user_id')}"
     birth_date = item.get("birth_date") or "—"
     review = storage.get_review_for_order(item.get("order_id"))
-    created = review.get("created_at") if review else "—"
-    text = review.get("text") if review else "—"
+    if review:
+        created = review.get("created_at") or "—"
+        text = review.get("text") or "—"
+    else:
+        created = item.get("review_skipped_at") or "—"
+        text = "—"
     header = f"Отзыв по заявке №{order_id}\nФИО: {name}\nДР: {birth_date}\nДата: {created}\n\nОтзыв:\n{text}"
     service_code = service_id or "all"
     kb = InlineKeyboardMarkup(
